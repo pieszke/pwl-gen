@@ -1,0 +1,438 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <!-- <meta http-equiv="refresh" content="1" /> -->
+    <title>PWL generator</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap");
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        font-family: "roboto", sans-serif;
+      }
+      body {
+        display: grid;
+        justify-content: center;
+        align-content: center;
+      }
+      canvas {
+        border: 2px solid darkgrey;
+        box-shadow: darkgray 0px 0px 15px 10px;
+      }
+      main {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        grid-template-rows: auto 1fr;
+        row-gap: 1rem;
+        align-items: center;
+      }
+      main > h1 {
+        grid-column: 1 / 3;
+        text-align: center;
+      }
+      main > aside {
+        display: grid;
+        grid-template-columns: max-content 8ch;
+        row-gap: 1rem;
+        column-gap: 1ch;
+        padding: 1rem;
+        align-items: center;
+        background-color: darkgrey;
+      }
+      aside > button {
+        grid-column: 1 / 3;
+      }
+      main > canvas {
+        width: 80vw;
+        height: 70vh;
+      }
+      dialog:not([open]) {
+        display: none;
+      }
+      dialog {
+        margin: auto;
+        display: grid;
+        justify-items: center;
+        gap: 0.5em;
+      }
+      dialog > section {
+        display: inline;
+      }
+      dialog > * {
+        width: 100%;
+      }
+    </style>
+    <script src="https://livejs.com/live.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-dragdata@latest/dist/chartjs-plugin-dragdata.min.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>PWL generator</h1>
+      <aside>
+        <button id="add" onclick="add_point()">Add point</button>
+        <button id="clear" onclick="clear_pwl()">Clear</button>
+        <label for="xmin">X min value:</label>
+        <input
+          id="xmin"
+          name="xmin"
+          type="number"
+          value="0"
+          onchange="update_axis(event)"
+        />
+        <label for="xmax">X max value:</label>
+        <input
+          id="xmax"
+          name="xmax"
+          type="number"
+          value="100"
+          onchange="update_axis(event)"
+        />
+        <label for="ymin">Y min value:</label>
+        <input
+          id="ymin"
+          name="ymin"
+          type="number"
+          value="0"
+          onchange="update_axis(event)"
+        />
+        <label for="ymax">Y max value:</label>
+        <input
+          id="ymax"
+          name="ymax"
+          type="number"
+          value="100"
+          onchange="update_axis(event)"
+        />
+        <label for="snap">Snapping:</label>
+        <select name="snap" id="snapping" onchange="update_snap()">
+          <option value="6">None</option>
+          <option value="2">0.01</option>
+          <option value="1">0.1</option>
+          <option value="0">1</option>
+        </select>
+        <button id="export" onclick="export_data()">Export</button>
+      </aside>
+      <canvas></canvas>
+    </main>
+
+    <dialog id="edit_dialog">
+      <h3>Edit point</h3>
+      <section>
+        <label for="x">X:</label>
+        <input id="dx" name="x" type="number" />
+      </section>
+      <section>
+        <label for="y">Y:</label>
+        <input id="dy" name="y" type="number" />
+      </section>
+      <button id="close_dialog" onclick="stop_edit()">Save and close</button>
+    </dialog>
+
+    <dialog id="export_dialog">
+      <h3>Settings</h3>
+      <section>
+        <label for="scalex">X scale factor:</label>
+        <input
+          type="number"
+          id="scalex"
+          name="scalex"
+          value="1"
+          step="0.1"
+          style="width: 9ch"
+          onchange="update_exported()"
+        />
+      </section>
+      <section>
+        <label for="scaley">Y scale factor:</label>
+        <input
+          type="number"
+          id="scaley"
+          name="scaley"
+          value="1"
+          step="0.1"
+          style="width: 9ch"
+          onchange="update_exported()"
+        />
+      </section>
+      <section>
+        <label for="sep">Format:</label>
+        <select name="format" id="format" onchange="update_exported()">
+          <option value="  ">Space</option>
+          <option
+            value=" 
+          "
+          >
+            Space+Newline
+          </option>
+          <option
+            value=",
+          "
+          >
+            Comma+Newline
+          </option>
+        </select>
+      </section>
+      <h3>Exported data</h3>
+      <textarea id="exported_data" cols="20" rows="10" readonly></textarea>
+      <section>
+        <button onclick="copy_to_clipboard()">Copy</button>
+        <button onclick="export_file()">Save to file</button>
+        <button onclick="export_dialog.close()">Close</button>
+      </section>
+    </dialog>
+  </body>
+
+  <script>
+    const edit_dialog = document.getElementById("edit_dialog");
+    const export_dialog = document.getElementById("export_dialog");
+    const canvas = document.querySelector("canvas");
+    const ctx = canvas.getContext("2d");
+
+    let edit_idx = null;
+    let edit_obj = null;
+
+    function x_range() {
+      return {
+        min: parseInt(document.getElementById("xmin").value),
+        max: parseInt(document.getElementById("xmax").value),
+      };
+    }
+
+    function y_range() {
+      return {
+        min: parseInt(document.getElementById("ymin").value),
+        max: parseInt(document.getElementById("ymax").value),
+      };
+    }
+
+    const chart = new Chart(ctx, {
+      type: "line",
+      data: {},
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            type: "linear",
+            position: "bottom",
+            ...x_range(),
+          },
+          y: {
+            type: "linear",
+            position: "left",
+            ...y_range(),
+          },
+        },
+        plugins: {
+          dragData: {
+            showTooltip: true, // show the tooltip while dragging [default = true]
+            dragX: true, // also enable dragging along the x-axis.
+            // snap to data points or a grid (see options below)
+            onDrag: function (event, datasetIndex, index, value) {
+              if (
+                value.x <
+                  chart.data.datasets[datasetIndex].data[index - 1]?.x ||
+                value.x > chart.data.datasets[datasetIndex].data[index + 1]?.x
+              )
+                return false;
+            },
+          },
+          legend: {
+            display: false,
+          },
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: function (context) {
+                return `x: ${context.parsed.x.toFixed(3)}, y: ${context.parsed.y.toFixed(3)}`;
+              },
+              title: (x) => "",
+            },
+          },
+        },
+        onHover: (evt, item) => {
+          if (item.length > 0) edit_idx = item[0].index;
+          else edit_idx = null;
+        },
+      },
+    });
+
+    function extend_axis(scales) {
+      let diff = scales.max - scales.min;
+      // use log to determine how much to extend the axis
+      let log = Math.floor(Math.log10(diff));
+      scales.max = (Math.floor(scales.max / 10 ** log) + 1) * 10 ** log;
+      scales.min = (Math.floor(scales.min / 10 ** log) - 1) * 10 ** log;
+    }
+
+    function sync_axis_inputs() {
+      document.getElementById("xmin").value = chart.options.scales.x.min;
+      document.getElementById("xmax").value = chart.options.scales.x.max;
+      document.getElementById("ymin").value = chart.options.scales.y.min;
+      document.getElementById("ymax").value = chart.options.scales.y.max;
+    }
+
+    function update_chart(resize = false) {
+      if (resize) {
+        // update axis values to fit the new data
+        chart.options.scales.x.min = chart.data.datasets[0].data[0].x;
+        chart.options.scales.x.max = chart.data.datasets[0].data[0].x;
+        chart.options.scales.y.min = chart.data.datasets[0].data[0].y;
+        chart.options.scales.y.max = chart.data.datasets[0].data[0].y;
+
+        for (let pt of chart.data.datasets[0].data) {
+          if (pt.x < chart.options.scales.x.min)
+            chart.options.scales.x.min = pt.x;
+          else if (pt.x > chart.options.scales.x.max)
+            chart.options.scales.x.max = pt.x;
+          if (pt.y < chart.options.scales.y.min)
+            chart.options.scales.y.min = pt.y;
+          else if (pt.y > chart.options.scales.y.max)
+            chart.options.scales.y.max = pt.y;
+        }
+        extend_axis(chart.options.scales.x);
+        extend_axis(chart.options.scales.y);
+        sync_axis_inputs();
+      }
+
+      chart.update();
+    }
+
+    function add_point() {
+      last = chart.data.datasets[0].data.slice(-1)[0];
+      x_sc = chart.options.scales.x;
+      new_obj = { x: last.x + (x_sc.max - x_sc.min) / 10, y: last.y };
+      chart.data.datasets[0].data.push(new_obj);
+      update_chart(true);
+    }
+
+    function clear_pwl() {
+      chart.data = {
+        datasets: [
+          {
+            label: "PWL",
+            data: [
+              { x: 0, y: 0 },
+              { x: 80, y: 80 },
+            ],
+            borderColor: "blue",
+            fill: false,
+          },
+        ],
+      };
+      update_chart(true);
+    }
+
+    function update_axis(e) {
+      let axis = e.target.name[0];
+      let attr = e.target.name.slice(1);
+      chart.options.scales[axis][attr] = parseFloat(e.target.value);
+      update_chart();
+    }
+
+    function update_snap() {
+      chart.options.plugins.dragData.round = parseInt(
+        document.getElementById("snapping").value,
+      );
+    }
+
+    function stop_edit() {
+      if (edit_dialog.dataset.idx === undefined) {
+        edit_dialog.close();
+        return;
+      }
+      edit_obj = {
+        x: parseFloat(edit_dialog.querySelector("#dx").value),
+        y: parseFloat(edit_dialog.querySelector("#dy").value),
+      };
+      len = chart.data.datasets[0].data.length;
+      let i = 0;
+      for (i; i < len; i++) {
+        if (chart.data.datasets[0].data[i].x > edit_obj.x) {
+          chart.data.datasets[0].data.splice(i, 0, edit_obj);
+          break;
+        }
+      }
+      if (i === len) chart.data.datasets[0].data.push(edit_obj);
+      update_chart(true);
+      edit_dialog.close();
+      edit_dialog.dataset.idx = undefined;
+      edit_obj = null;
+    }
+
+    function update_exported() {
+      const scalex = parseFloat(document.getElementById("scalex").value);
+      const scaley = parseFloat(document.getElementById("scaley").value);
+      fmt = document.getElementById("format").value;
+      const data = chart.data.datasets[0].data
+        .map(
+          (point) =>
+            `${(point.x * scalex).toFixed(3)}${fmt[0]}${(point.y * scaley).toFixed(3)}`,
+        )
+        .join(fmt[1]);
+      export_dialog.querySelector("#exported_data").value = data;
+    }
+
+    function export_data() {
+      update_exported();
+      export_dialog.showModal();
+    }
+
+    function export_file() {
+      const a = document.createElement("a");
+      const file = new Blob(
+        [export_dialog.querySelector("#exported_data").value],
+        {
+          type: "text/plain",
+        },
+      );
+      a.href = URL.createObjectURL(file);
+      a.download = "pwl_data.txt";
+      a.click();
+    }
+
+    async function copy_to_clipboard() {
+      try {
+        await navigator.clipboard.writeText(
+          export_dialog.querySelector("#exported_data").value,
+        );
+        alert("Copied to clipboard!");
+      } catch (err) {
+        alert("Failed to copy: " + err);
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      clear_pwl();
+
+      canvas.addEventListener("contextmenu", (e) => {
+        if (edit_idx === null) return;
+        e.preventDefault();
+        edit_dialog.dataset.idx = edit_idx;
+        edit_obj = chart.data.datasets[0].data.splice(edit_idx, 1)[0];
+        edit_dialog.querySelector("#dx").value = edit_obj.x;
+        edit_dialog.querySelector("#dy").value = edit_obj.y;
+        edit_dialog.showModal();
+      });
+
+      const parser = new RegExp(/(\d+(?:\.\d+)?)/, "gm");
+      window.addEventListener("paste", (e) => {
+        const text = e.clipboardData.getData("text/plain");
+        const data = Array.from(text.matchAll(parser).map(parseFloat));
+        if (data.length === 0 || data.length % 2 !== 0) {
+          alert(
+            `Invalid data length ${data.length}, expected even number of values`,
+          );
+          return;
+        }
+        chart.data.datasets[0].data = [];
+        for (let i = 0; i < data.length; i += 2) {
+          chart.data.datasets[0].data.push({ x: data[i], y: data[i + 1] });
+        }
+        update_chart(true);
+      });
+    });
+  </script>
+</html>
