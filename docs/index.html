@@ -10,27 +10,26 @@
         margin: 0;
         font-family: "roboto", sans-serif;
       }
+
       body {
-        display: grid;
-        justify-content: center;
-        align-content: center;
-      }
-      canvas {
-        border: 2px solid darkgrey;
-        box-shadow: darkgray 0px 0px 15px 10px;
-      }
-      main {
         display: grid;
         grid-template-columns: auto 1fr;
         grid-template-rows: auto 1fr;
-        row-gap: 1rem;
+        row-gap: 1.5rem;
         align-items: center;
+        justify-content: center;
+        align-content: center;
+        padding: 10%;
+        width: 100%;
+        height: 100%;
       }
-      main > header {
+
+      header {
         grid-column: 1 / 3;
         text-align: center;
       }
-      main > aside {
+
+      aside {
         display: grid;
         grid-template-columns: max-content 8ch;
         row-gap: 1rem;
@@ -39,25 +38,38 @@
         align-items: center;
         background-color: darkgrey;
       }
+
       aside > button {
         grid-column: 1 / 3;
       }
-      main > canvas {
-        width: 80vw;
-        height: 70vh;
+
+      footer {
+        grid-column: 1 / 3;
+        text-align: center;
       }
+
+      canvas {
+        border: 2px solid darkgrey;
+        box-shadow: darkgray 0 0 1rem 0.5rem;
+        width: 100%;
+        height: 100%;
+      }
+
       dialog:not([open]) {
         display: none;
       }
+
       dialog {
         margin: auto;
         display: grid;
         justify-items: center;
         gap: 0.5em;
       }
+
       dialog > section {
         display: inline;
       }
+
       dialog > * {
         width: 100%;
       }
@@ -66,58 +78,66 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-dragdata@latest/dist/chartjs-plugin-dragdata.min.js"></script>
   </head>
   <body>
+    <header>
+      <h1>PWL generator</h1>
+      <p>To import existing data paste it on the website.</p>
+    </header>
+    <aside>
+      <button id="add" onclick="add_point()">Add point</button>
+      <button id="clear" onclick="clear_pwl()">Clear</button>
+      <label for="xmin">X min value:</label>
+      <input
+        id="xmin"
+        name="xmin"
+        type="number"
+        value="0"
+        onchange="update_axis(event)"
+      />
+      <label for="xmax">X max value:</label>
+      <input
+        id="xmax"
+        name="xmax"
+        type="number"
+        value="100"
+        onchange="update_axis(event)"
+      />
+      <label for="ymin">Y min value:</label>
+      <input
+        id="ymin"
+        name="ymin"
+        type="number"
+        value="0"
+        onchange="update_axis(event)"
+      />
+      <label for="ymax">Y max value:</label>
+      <input
+        id="ymax"
+        name="ymax"
+        type="number"
+        value="100"
+        onchange="update_axis(event)"
+      />
+      <label for="snap">Snapping:</label>
+      <select name="snap" id="snapping" onchange="update_snap()">
+        <option value="6">None</option>
+        <option value="2">0.01</option>
+        <option value="1">0.1</option>
+        <option value="0">1</option>
+      </select>
+      <button id="export" onclick="export_data()">Export</button>
+    </aside>
     <main>
-      <header>
-        <h1>PWL generator</h1>
-        <p>To import existing data paste it on the website.</p>
-      </header>
-      <aside>
-        <button id="add" onclick="add_point()">Add point</button>
-        <button id="clear" onclick="clear_pwl()">Clear</button>
-        <label for="xmin">X min value:</label>
-        <input
-          id="xmin"
-          name="xmin"
-          type="number"
-          value="0"
-          onchange="update_axis(event)"
-        />
-        <label for="xmax">X max value:</label>
-        <input
-          id="xmax"
-          name="xmax"
-          type="number"
-          value="100"
-          onchange="update_axis(event)"
-        />
-        <label for="ymin">Y min value:</label>
-        <input
-          id="ymin"
-          name="ymin"
-          type="number"
-          value="0"
-          onchange="update_axis(event)"
-        />
-        <label for="ymax">Y max value:</label>
-        <input
-          id="ymax"
-          name="ymax"
-          type="number"
-          value="100"
-          onchange="update_axis(event)"
-        />
-        <label for="snap">Snapping:</label>
-        <select name="snap" id="snapping" onchange="update_snap()">
-          <option value="6">None</option>
-          <option value="2">0.01</option>
-          <option value="1">0.1</option>
-          <option value="0">1</option>
-        </select>
-        <button id="export" onclick="export_data()">Export</button>
-      </aside>
       <canvas></canvas>
     </main>
-
+    <footer>
+      Made with love instead of AI by <b>pieszke</b> |
+      <a
+        href="https://github.com/pieszke/pwl-gen"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Github</a
+      >
+    </footer>
     <dialog id="edit_dialog">
       <h3>Edit point</h3>
       <section>
