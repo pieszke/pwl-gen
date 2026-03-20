@@ -67,7 +67,9 @@
       }
 
       dialog > section {
-        display: inline;
+        display: flex;
+        gap: 1ch;
+        justify-content: center;
       }
 
       dialog > * {
@@ -148,7 +150,10 @@
         <label for="y">Y:</label>
         <input id="dy" name="y" type="number" />
       </section>
-      <button id="close_dialog" onclick="stop_edit()">Save and close</button>
+      <section>
+        <button onclick="stop_edit()">Save</button>
+        <button onclick="edit_dialog.close()">Close</button>
+      </section>
     </dialog>
 
     <dialog id="export_dialog">
@@ -211,8 +216,20 @@
     const canvas = document.querySelector("canvas");
     const ctx = canvas.getContext("2d");
 
+    // https://stackoverflow.com/a/26984690
+    function dialog_exit(e) {
+      let rect = e.target.getBoundingClientRect();
+      let isInDialog =
+        rect.top <= e.clientY &&
+        e.clientY <= rect.top + rect.height &&
+        rect.left <= e.clientX &&
+        e.clientX <= rect.left + rect.width;
+      if (!isInDialog) {
+        e.target.close();
+      }
+    }
+
     let edit_idx = null;
-    let edit_obj = null;
 
     function x_range() {
       return {
@@ -368,15 +385,8 @@
         x: parseFloat(edit_dialog.querySelector("#dx").value),
         y: parseFloat(edit_dialog.querySelector("#dy").value),
       };
-      len = chart.data.datasets[0].data.length;
-      let i = 0;
-      for (i; i < len; i++) {
-        if (chart.data.datasets[0].data[i].x > edit_obj.x) {
-          chart.data.datasets[0].data.splice(i, 0, edit_obj);
-          break;
-        }
-      }
-      if (i === len) chart.data.datasets[0].data.push(edit_obj);
+      chart.data.datasets[0].data[edit_dialog.dataset.idx] = edit_obj;
+      chart.data.datasets[0].data.sort((a, b) => a.x - b.x);
       update_chart(true);
       edit_dialog.close();
       edit_dialog.dataset.idx = undefined;
@@ -428,11 +438,15 @@
     window.addEventListener("DOMContentLoaded", () => {
       clear_pwl();
 
+      document.querySelectorAll("dialog").forEach((dialog) => {
+        dialog.addEventListener("click", dialog_exit);
+      });
+
       canvas.addEventListener("contextmenu", (e) => {
         if (edit_idx === null) return;
         e.preventDefault();
         edit_dialog.dataset.idx = edit_idx;
-        edit_obj = chart.data.datasets[0].data.splice(edit_idx, 1)[0];
+        edit_obj = chart.data.datasets[0].data[edit_idx];
         edit_dialog.querySelector("#dx").value = edit_obj.x;
         edit_dialog.querySelector("#dy").value = edit_obj.y;
         edit_dialog.showModal();
