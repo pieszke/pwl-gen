@@ -27,7 +27,7 @@
         row-gap: 1rem;
         align-items: center;
       }
-      main > h1 {
+      main > header {
         grid-column: 1 / 3;
         text-align: center;
       }
@@ -63,13 +63,15 @@
         width: 100%;
       }
     </style>
-    <script src="https://livejs.com/live.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-dragdata@latest/dist/chartjs-plugin-dragdata.min.js"></script>
   </head>
   <body>
     <main>
-      <h1>PWL generator</h1>
+      <header>
+        <h1>PWL generator</h1>
+        <p>To import existing data paste it on the website.</p>
+      </header>
       <aside>
         <button id="add" onclick="add_point()">Add point</button>
         <button id="clear" onclick="clear_pwl()">Clear</button>
