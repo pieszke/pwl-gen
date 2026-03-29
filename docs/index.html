@@ -1,7 +1,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>PWL generator</title>
+    <title>PWL editor</title>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap");
 
@@ -75,18 +75,48 @@
       dialog > * {
         width: 100%;
       }
+
+      textarea {
+        resize: none;
+        border: 2px solid darkgrey;
+      }
+      textarea:not([valid]) {
+        border-color: crimson;
+        box-shadow: inset 0 0 0.5ch red;
+      }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-dragdata@latest/dist/chartjs-plugin-dragdata.min.js"></script>
+    <script>
+      // https://stackoverflow.com/a/75988895
+      const debounce = (callback, wait) => {
+        let timeoutId = null;
+        return (...args) => {
+          window.clearTimeout(timeoutId);
+          timeoutId = window.setTimeout(() => {
+            callback(...args);
+          }, wait);
+        };
+      };
+      const IMPORT_ACTION = Object.freeze({
+        R: "Replace",
+        A: "Append",
+        P: "Prepend",
+      });
+    </script>
   </head>
   <body>
     <header>
-      <h1>PWL generator</h1>
-      <p>To import existing data paste it on the website.</p>
+      <h1>PWL editor</h1>
+      <p>
+        To import existing data just copy and paste text or a file or use the
+        <i>Import</i> button
+      </p>
     </header>
     <aside>
-      <button id="add" onclick="add_point()">Add point</button>
-      <button id="clear" onclick="clear_pwl()">Clear</button>
+      <button onclick="add_point()">Add point</button>
+      <button onclick="import_dialog.showModal()">Import</button>
+      <button onclick="clear_pwl()">Clear</button>
       <label for="xmin">X min value:</label>
       <input
         id="xmin"
@@ -119,7 +149,7 @@
         value="100"
         onchange="update_axis(event)"
       />
-      <label for="snap">Snapping:</label>
+      <label for="snapping">Snapping:</label>
       <select name="snap" id="snapping" onchange="update_snap()">
         <option value="6">None</option>
         <option value="2">0.01</option>
@@ -140,24 +170,55 @@
         >Github</a
       >
     </footer>
+
     <dialog id="edit_dialog">
       <h3>Edit point</h3>
+      <hr />
       <section>
-        <label for="x">X:</label>
+        <label for="dx">X:</label>
         <input id="dx" name="x" type="number" />
       </section>
       <section>
-        <label for="y">Y:</label>
+        <label for="dy">Y:</label>
         <input id="dy" name="y" type="number" />
       </section>
       <section>
+        <button onclick="stop_edit(true)">Remove</button>
         <button onclick="stop_edit()">Save</button>
-        <button onclick="edit_dialog.close()">Close</button>
+        <button onclick="close_dialog(this)">Close</button>
+      </section>
+    </dialog>
+
+    <dialog id="import_dialog">
+      <h3>Import points</h3>
+      <hr />
+      <textarea
+        id="imported_data"
+        cols="30"
+        rows="10"
+        onkeypress="import_keypress(this)"
+      ></textarea>
+      <section>
+        <label for="action">Action:</label>
+        <select
+          name="action"
+          id="action"
+          onchange="import_update_offset_UI(this)"
+        ></select>
+      </section>
+      <section>
+        <label for="xoff">X offset:</label>
+        <input id="xoff" name="xoff" type="number" disabled value="0" />
+      </section>
+      <section>
+        <button onclick="import_data()">Import</button>
+        <button onclick="close_dialog(this)">Close</button>
       </section>
     </dialog>
 
     <dialog id="export_dialog">
       <h3>Settings</h3>
+      <hr />
       <section>
         <label for="scalex">X scale factor:</label>
         <input
@@ -201,23 +262,36 @@
         </select>
       </section>
       <h3>Exported data</h3>
-      <textarea id="exported_data" cols="20" rows="10" readonly></textarea>
+      <textarea
+        id="exported_data"
+        cols="20"
+        rows="10"
+        readonly
+        valid
+      ></textarea>
       <section>
         <button onclick="copy_to_clipboard()">Copy</button>
         <button onclick="export_file()">Save to file</button>
-        <button onclick="export_dialog.close()">Close</button>
+        <button onclick="close_dialog(this)">Close</button>
       </section>
     </dialog>
   </body>
 
   <script>
     const edit_dialog = document.getElementById("edit_dialog");
+
+    const import_dialog = document.getElementById("import_dialog");
+    const imported_data = document.getElementById("imported_data");
+
     const export_dialog = document.getElementById("export_dialog");
+    const exported_data = document.getElementById("exported_data");
+
     const canvas = document.querySelector("canvas");
     const ctx = canvas.getContext("2d");
 
     // https://stackoverflow.com/a/26984690
-    function dialog_exit(e) {
+    function dialog_exit_outside(e) {
+      if (e.target !== e.currentTarget) return; // fix to ignore clicks on objects inside
       let rect = e.target.getBoundingClientRect();
       let isInDialog =
         rect.top <= e.clientY &&
@@ -227,6 +301,10 @@
       if (!isInDialog) {
         e.target.close();
       }
+    }
+
+    function close_dialog(button) {
+      button.closest("dialog").close();
     }
 
     let edit_idx = null;
@@ -376,21 +454,28 @@
       );
     }
 
-    function stop_edit() {
+    function stop_edit(remove = false) {
       if (edit_dialog.dataset.idx === undefined) {
         edit_dialog.close();
         return;
       }
-      edit_obj = {
-        x: parseFloat(edit_dialog.querySelector("#dx").value),
-        y: parseFloat(edit_dialog.querySelector("#dy").value),
-      };
-      chart.data.datasets[0].data[edit_dialog.dataset.idx] = edit_obj;
-      chart.data.datasets[0].data.sort((a, b) => a.x - b.x);
+      if (remove) {
+        if (chart.data.datasets[0].data.length <= 2) {
+          alert("Can't remove point. At least 2 points are required.");
+          return;
+        }
+        chart.data.datasets[0].data.splice(edit_dialog.dataset.idx, 1);
+      } else {
+        let edit_obj = {
+          x: parseFloat(edit_dialog.querySelector("#dx").value),
+          y: parseFloat(edit_dialog.querySelector("#dy").value),
+        };
+        chart.data.datasets[0].data[edit_dialog.dataset.idx] = edit_obj;
+        chart.data.datasets[0].data.sort((a, b) => a.x - b.x);
+      }
       update_chart(true);
       edit_dialog.close();
       edit_dialog.dataset.idx = undefined;
-      edit_obj = null;
     }
 
     function update_exported() {
@@ -403,7 +488,7 @@
             `${(point.x * scalex).toFixed(3)}${fmt[0]}${(point.y * scaley).toFixed(3)}`,
         )
         .join(fmt[1]);
-      export_dialog.querySelector("#exported_data").value = data;
+      exported_data.value = data;
     }
 
     function export_data() {
@@ -413,22 +498,91 @@
 
     function export_file() {
       const a = document.createElement("a");
-      const file = new Blob(
-        [export_dialog.querySelector("#exported_data").value],
-        {
-          type: "text/plain",
-        },
-      );
+      const file = new Blob([exported_data.value], {
+        type: "text/plain",
+      });
       a.href = URL.createObjectURL(file);
       a.download = "pwl_data.txt";
       a.click();
     }
 
+    const parser = new RegExp(
+      /((\d+(?:\.\d+)?)[, \t]+?(\d+(?:\.\d+)?),?)/,
+      "gm",
+    );
+
+    function is_import_text_valid(text) {
+      if (text.length === 0) return false;
+      let test = text.replaceAll(parser, "").trim();
+      return test.length === 0;
+    }
+
+    function test_textarea_validity(textarea) {
+      if (is_import_text_valid(textarea.value))
+        textarea.setAttribute("valid", "");
+      else textarea.removeAttribute("valid");
+    }
+
+    const import_keypress = debounce(test_textarea_validity, 500);
+
+    function import_update_offset_UI(select) {
+      const action = select.value;
+      const xoff_input = document.getElementById("xoff");
+      xoff_input.disabled = action === IMPORT_ACTION.R;
+      if (action === IMPORT_ACTION.A) {
+        xoff_input.title = "Offset of new data '0' from last point";
+      } else if (action === IMPORT_ACTION.P) {
+        xoff_input.title = "Offset of new data last point's X from first point";
+      } else {
+        xoff_input.title = "";
+      }
+    }
+
+    function import_data() {
+      if (
+        !is_import_text_valid(imported_data.value) &&
+        !confirm(
+          `Invalid data.\nLeft from parsing: '${imported_data.value.replaceAll(parser, "").trim()}'\nImport anyway?`,
+        )
+      )
+        return;
+      let data = Array.from(
+        imported_data.value.matchAll(parser).map((match) => ({
+          x: parseFloat(match[2]),
+          y: parseFloat(match[3]),
+        })),
+      );
+      let rising = data.toSorted((a, b) => a.x - b.x);
+      if (rising.some((pt, i) => pt.x !== data[i].x || pt.y !== data[i].y)) {
+        if (confirm("Points are not in order. They will be sorted by x value."))
+          data = rising;
+        else return;
+      }
+      let off = parseFloat(document.getElementById("xoff").value);
+      const action = document.getElementById("action").value;
+      switch (action) {
+        case IMPORT_ACTION.R:
+          chart.data.datasets[0].data = data;
+          console.log(chart.data.datasets[0].data);
+          break;
+        case IMPORT_ACTION.A:
+          off += chart.data.datasets[0].data.at(-1).x;
+          chart.data.datasets[0].data.push(
+            ...data.map((d) => ({ x: d.x + off, y: d.y })),
+          );
+          break;
+        case IMPORT_ACTION.P:
+          off += data.at(-1).x;
+          chart.data.datasets[0].data.map().unshift(...data);
+          break;
+      }
+      update_chart(true);
+      import_dialog.close();
+    }
+
     async function copy_to_clipboard() {
       try {
-        await navigator.clipboard.writeText(
-          export_dialog.querySelector("#exported_data").value,
-        );
+        await navigator.clipboard.writeText(exported_data.value);
         alert("Copied to clipboard!");
       } catch (err) {
         alert("Failed to copy: " + err);
@@ -436,10 +590,14 @@
     }
 
     window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("action").innerHTML = Object.values(IMPORT_ACTION)
+        .map((value) => `<option value="${value}">${value}</option>`)
+        .join("");
+
       clear_pwl();
 
       document.querySelectorAll("dialog").forEach((dialog) => {
-        dialog.addEventListener("click", dialog_exit);
+        dialog.addEventListener("click", dialog_exit_outside);
       });
 
       canvas.addEventListener("contextmenu", (e) => {
@@ -452,21 +610,27 @@
         edit_dialog.showModal();
       });
 
-      const parser = new RegExp(/(\d+(?:\.\d+)?)/, "gm");
-      window.addEventListener("paste", (e) => {
-        const text = e.clipboardData.getData("text/plain");
-        const data = Array.from(text.matchAll(parser).map(parseFloat));
-        if (data.length === 0 || data.length % 2 !== 0) {
-          alert(
-            `Invalid data length ${data.length}, expected even number of values`,
-          );
+      window.addEventListener("paste", async (e) => {
+        if (import_dialog.open) return;
+        let text = "";
+        if (e.clipboardData.types.includes("text/plain"))
+          text = e.clipboardData.getData("text/plain");
+        else if (e.clipboardData.files.length > 0) {
+          const file = e.clipboardData.files[0];
+          if (file.type.startsWith("text/")) {
+            text = await file.text();
+          } else {
+            alert("Pasted file is not a text file.");
+            return;
+          }
+        } else {
+          alert("Clipboard does not contain text data.");
           return;
         }
-        chart.data.datasets[0].data = [];
-        for (let i = 0; i < data.length; i += 2) {
-          chart.data.datasets[0].data.push({ x: data[i], y: data[i + 1] });
-        }
-        update_chart(true);
+        imported_data.value = text;
+        test_textarea_validity(imported_data);
+        import_dialog.showModal();
+        e.preventDefault();
       });
     });
   </script>
