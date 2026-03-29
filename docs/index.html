@@ -101,7 +101,7 @@
       const IMPORT_ACTION = Object.freeze({
         R: "Replace",
         A: "Append",
-        P: "Prepend",
+        M: "Mix",
       });
     </script>
   </head>
@@ -197,6 +197,7 @@
         cols="30"
         rows="10"
         onkeypress="import_keypress(this)"
+        placeholder="Input your data here or paste text or a file"
       ></textarea>
       <section>
         <label for="action">Action:</label>
@@ -530,10 +531,13 @@
       const xoff_input = document.getElementById("xoff");
       xoff_input.disabled = action === IMPORT_ACTION.R;
       if (action === IMPORT_ACTION.A) {
+        select.title = "Append data after existing data";
         xoff_input.title = "Offset of new data '0' from last point";
-      } else if (action === IMPORT_ACTION.P) {
-        xoff_input.title = "Offset of new data last point's X from first point";
+      } else if (action === IMPORT_ACTION.M) {
+        select.title = "Mix data with existing data";
+        xoff_input.title = "Offset between zeros of new and existing data";
       } else {
+        select.title = "Replace existing data with new data";
         xoff_input.title = "";
       }
     }
@@ -571,9 +575,11 @@
             ...data.map((d) => ({ x: d.x + off, y: d.y })),
           );
           break;
-        case IMPORT_ACTION.P:
-          off += data.at(-1).x;
-          chart.data.datasets[0].data.map().unshift(...data);
+        case IMPORT_ACTION.M:
+          chart.data.datasets[0].data.push(
+            ...data.map((d) => ({ x: d.x + off, y: d.y })),
+          );
+          chart.data.datasets[0].data.sort((a, b) => a.x - b.x);
           break;
       }
       update_chart(true);
@@ -611,7 +617,7 @@
       });
 
       window.addEventListener("paste", async (e) => {
-        if (import_dialog.open) return;
+        if (import_dialog.open && imported_data.value !== "") return;
         let text = "";
         if (e.clipboardData.types.includes("text/plain"))
           text = e.clipboardData.getData("text/plain");
