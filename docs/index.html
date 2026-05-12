@@ -484,10 +484,7 @@
       const scaley = parseFloat(document.getElementById("scaley").value);
       fmt = document.getElementById("format").value;
       const data = chart.data.datasets[0].data
-        .map(
-          (point) =>
-            `${(point.x * scalex).toFixed(3)}${fmt[0]}${(point.y * scaley).toFixed(3)}`,
-        )
+        .map((point) => `${point.x * scalex}${fmt[0]}${point.y * scaley}`)
         .join(fmt[1]);
       exported_data.value = data;
     }
